@@ -1,12 +1,18 @@
-//NFC or RFID lock system (FREA-K) most of it made by me chirag parmar m remember that in your life. Just kidding :)
-
+/*/The following Code is the Arduino NFC FREA-K v2.0 Code Developed by Chirag Parmar, Swaroop and Projjal Gupta
+ * Feel free to use this code.
+ * Copyright© Next Tech Labs, SRM
+ */
 #include <RFID.h>
 #include <EEPROM.h>
 #include <SPI.h>
 
-const int tagSize = 7;    //size of the tags used ex. 7bytes, 4bytes etc.
+int ledgr = 3;  //green led indicator for access grant
+int ledred = 4; //red led indicator for access revoked
+int lock = 2; //pinout for lock
+int buttonState;
+int panic = 6;
 
-// A data structure that holds the id and tag data 
+const int tagSize = 4;
 
 struct NFCDATA {
   int id;
@@ -15,20 +21,25 @@ struct NFCDATA {
 
 RFID rfid(10,5);    // rfid variable with SS/SDA pin at DIO 10 and RST pin at DIO 5
 
-NFCDATA tag; //global data object of NFCDATA type
-
-int rid = 0;              // id to be removed
+NFCDATA tag;
+int rid = 0;
 int address = 0;         //stores the tag addresses value
 byte serNum[tagSize];     //stores the read rfid data
-byte master[tagSize] = {0x1D,0x07F,0xE8,0x0D5,0x5F,0x00,0x00}; // master card data(do not store in the eeprom someone might read from it) 
+byte master[tagSize] = {0x1D,0x07F,0xE8,0x0D5}; // master card data(do not store in the eeprom someone might read from it) 
 
 void setup(){  
   Serial.begin(9600); // initialize serial communication
   SPI.begin(); // initialize SPI communication for RFID
+  
+  pinMode(ledgr, OUTPUT);
+  pinMode(ledred, OUTPUT);
+  pinMode(lock, OUTPUT);
+  pinMode(panic,INPUT_PULLUP);
+  
   address = getcurAddress();
   rfid.init(); // initialize the RFID  
   Serial.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-  Serial.println("+                    FREA-K (version 3.2)                   +");
+  Serial.println("+                    FREA-K (version 2.0)                   +");
   Serial.println("+           Please choose from the following:               +");
   Serial.println("+           - Scan your card to open the lock               +");
   Serial.println("+           - Use Master Card for advanced options          +");
@@ -52,12 +63,18 @@ void loop(){
     }
   }
   else if(!checkTag(tag)) {
+    //switch on green light
+    digitalWrite(ledgr, HIGH);
     Serial.println("Access Granted");
-    delay(1000);      
+    door();
+    digitalWrite(ledgr, LOW);
   }
   else if(checkTag(tag)) {
+    digitalWrite(ledred, HIGH);
     Serial.println("Access Denied");
+    digitalWrite(lock, LOW);
     delay(1000);
+    digitalWrite(ledred, LOW);
   }
 }
 
@@ -79,7 +96,7 @@ void printalltags() {
   }
 }
 
-/* will read the tags from the rfid sensor and store it into the variable 'tag.data'
+/* will read the tags from the rfid sensor and store it into the variable 'data'
  *  it will create a loop of itself until a card is read i.e. when this function 
  *  is called a card must be kept on the sensor(mandatory).
  *  it gives us advantage over the previous method because u dont have to loop the 
@@ -95,7 +112,13 @@ start:
     }
   Serial.println("Card Read");
   }
-  else goto start;
+  else {
+    buttonState = digitalRead(panic);
+    if(buttonState == LOW) {
+      door();
+    }
+    goto start;
+  }
 }
 
 
@@ -120,23 +143,16 @@ boolean compareTag(byte arr1[],byte arr2[]) {
   else return false;
 }
 
-/* adds a tag to the EEPROM after reading a tag with id
- *  does not add the tag data if the tag data matches with 
- *  the previously 
+/* adds a tag with automatic id generation i.e. you dont have to specify the id no. 
+ *  for each tag you are adding it will give you the id no. after adding the tag.(incomplete)
+ *  write the code so that it prints the id no. on the serial monitor each id refers to 
+ *  7 bytes of data. consider the initial two bytes of data reserved for the address 
  */
 void addTag() {
-  int id = 0,check;
+  int id = 0;
   if(checkTag(tag)) {
-    startid:
     id = inputID();
-    check = checkID(id);
-    if(!(check > 0)) {
-      tag.id = id;
-    }
-    else {
-      Serial.print("ID already exists enter new ID");
-      goto startid;
-    }
+    tag.id = id;
     EEPROM.put(address, tag);
     address = address + sizeof(tag);
     EEPROM.write(address,0xFF);
@@ -188,7 +204,6 @@ void removeTag(int id) {
 int inputID() {
   int id;
   Serial.println("Enter the ID : ");
-  Serial.flush();
   start:
   if(Serial.available()) {
     id = Serial.parseInt();
@@ -225,3 +240,10 @@ int checkID(int id) {
   Serial.println("ID not found");
 }
 
+
+void door()
+{
+  digitalWrite(lock, HIGH);
+  delay(3000);
+  digitalWrite(lock, LOW);
+ }
