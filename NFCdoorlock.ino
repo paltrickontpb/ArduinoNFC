@@ -1,18 +1,16 @@
-/*/The following Code is the Arduino NFC FREA-K v2.0 Code Developed by Chirag Parmar, Swaroop and Projjal Gupta
- * Feel free to use this code.
- * Copyright© Next Tech Labs, SRM
- */
+/*/FREA-K 3.2 made by CHIRAG PARMAR, SWAROOP AND PROJJAL GUPTA
+ */Copyright© Next Tech Labs*/
+  
 #include <RFID.h>
 #include <EEPROM.h>
 #include <SPI.h>
 
-int ledgr = 3;  //green led indicator for access grant
-int ledred = 4; //red led indicator for access revoked
-int lock = 2; //pinout for lock
-int buttonState;
-int panic = 6;
-
 const int tagSize = 4;
+const int panic = 6;
+const int ledgr = 3;
+const int ledred = 4;
+const int lock = 2;
+const int rst = 8;
 
 struct NFCDATA {
   int id;
@@ -30,21 +28,15 @@ byte master[tagSize] = {0x1D,0x07F,0xE8,0x0D5}; // master card data(do not store
 void setup(){  
   Serial.begin(9600); // initialize serial communication
   SPI.begin(); // initialize SPI communication for RFID
-  
-  pinMode(ledgr, OUTPUT);
-  pinMode(ledred, OUTPUT);
-  pinMode(lock, OUTPUT);
-  pinMode(panic,INPUT_PULLUP);
-  
   address = getcurAddress();
-  rfid.init(); // initialize the RFID  
-  Serial.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-  Serial.println("+                    FREA-K (version 2.0)                   +");
-  Serial.println("+           Please choose from the following:               +");
-  Serial.println("+           - Scan your card to open the lock               +");
-  Serial.println("+           - Use Master Card for advanced options          +");
-  Serial.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
-
+  rfid.init(); // initialize the RFID 
+  pinMode(lock,OUTPUT);
+  pinMode(panic,INPUT_PULLUP);
+  pinMode(ledgr,OUTPUT);
+  pinMode(ledred,OUTPUT); 
+ // pinMode(rst,OUTPUT);
+  //digitalWrite(rst,HIGH);
+  pinMode(rst, INPUT);
 }
  
 void loop(){
@@ -63,18 +55,18 @@ void loop(){
     }
   }
   else if(!checkTag(tag)) {
-    //switch on green light
-    digitalWrite(ledgr, HIGH);
     Serial.println("Access Granted");
-    door();
-    digitalWrite(ledgr, LOW);
+    digitalWrite(lock,HIGH);
+    digitalWrite(ledgr,HIGH);
+    delay(3000);
+    digitalWrite(lock,LOW);
+    digitalWrite(ledgr,LOW);
   }
   else if(checkTag(tag)) {
-    digitalWrite(ledred, HIGH);
     Serial.println("Access Denied");
-    digitalWrite(lock, LOW);
+    digitalWrite(ledred,HIGH);
     delay(1000);
-    digitalWrite(ledred, LOW);
+    digitalWrite(ledred,LOW);
   }
 }
 
@@ -96,6 +88,17 @@ void printalltags() {
   }
 }
 
+void reset()
+{
+    if(millis()>=3600000)
+  {
+      Serial.println("Resetting..");
+      delay(1000);
+      pinMode(rst, OUTPUT);  
+      while(1);    
+  }
+}
+
 /* will read the tags from the rfid sensor and store it into the variable 'data'
  *  it will create a loop of itself until a card is read i.e. when this function 
  *  is called a card must be kept on the sensor(mandatory).
@@ -113,10 +116,14 @@ start:
   Serial.println("Card Read");
   }
   else {
-    buttonState = digitalRead(panic);
-    if(buttonState == LOW) {
-      door();
+    if(digitalRead(panic) == LOW) {
+      digitalWrite(lock,HIGH);
+      digitalWrite(ledgr,HIGH);
+      delay(3000);
+      digitalWrite(lock,LOW);
+      digitalWrite(ledgr,LOW);
     }
+    reset();
     goto start;
   }
 }
@@ -204,6 +211,7 @@ void removeTag(int id) {
 int inputID() {
   int id;
   Serial.println("Enter the ID : ");
+  Serial.flush();
   start:
   if(Serial.available()) {
     id = Serial.parseInt();
@@ -216,10 +224,10 @@ int inputID() {
 int getcurAddress() {
   int addr;
   byte value;
-  for(addr = 0;addr < EEPROM.length();addr++) {
+  for(addr = EEPROM.length();addr >=0 ;addr--) {
     value = EEPROM.read(addr);
     if(value == 0xFF) {
-      return addr;
+      return (EEPROM.length()-addr);
       break;
     }
   }
@@ -240,10 +248,25 @@ int checkID(int id) {
   Serial.println("ID not found");
 }
 
+void gui() {
+  Serial.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+  Serial.println("+                    FREA-K (version 3.2)                   +");
+  Serial.println("+           Please choose from the following:               +");
+  Serial.println("+           - Add a Tag                                     +");
+  Serial.println("+           - Swipe once more to remove a tag               +");
+  Serial.println("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+}
 
-void door()
-{
-  digitalWrite(lock, HIGH);
-  delay(3000);
-  digitalWrite(lock, LOW);
- }
+int getlastid() {
+  int id = 0;
+  int checkAddr = 0;
+  NFCDATA temptag;
+  while(checkAddr < address) {
+    EEPROM.get(checkAddr,temptag);
+    if(temptag.id > id) {
+      id = temptag.id;
+    }
+    checkAddr = checkAddr + sizeof(temptag);
+  }
+  return id;
+}
